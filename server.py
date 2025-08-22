@@ -24,6 +24,7 @@ SUPPORTED_EXTS = [
     ".mp3", ".ogg", ".webm", ".flac", ".wav", ".m4a",
     ".mp4", ".mkv", ".avi",  ".mov",  ".wmv",  ".flv", ".mpg",".mpeg"
 ]
+SYNC_THRESHOLD = 5
 
 def get_media_duration(filepath: str) -> float:
     """
@@ -85,15 +86,15 @@ async def broadcaster():
         if current["hash"]:
             if current["position"] > current["duration"]:
                 log.debug("SONG ENDED!!~")
-                await asyncio.sleep(2)
+                await asyncio.sleep(SYNC_THRESHOLD)
                 log.debug("trying to play next if there is one...")
                 async with httpx.AsyncClient() as client:
                     await client.post("http://127.0.0.1:5000/api/play")
                 continue
-            current["position"] = current["position"]+2
+            current["position"] = current["position"]+SYNC_THRESHOLD
             msg = json.dumps({"type": "play", "current": current})
             await asyncio.gather(*[c.send(msg) for c in clients], return_exceptions=True)
-        await asyncio.sleep(2)
+        await asyncio.sleep(SYNC_THRESHOLD)
 
 # ---------------- web API ----------------
 app = Quart(__name__)
