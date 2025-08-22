@@ -57,7 +57,10 @@ RECONNECT_DELAY = 2.0
 
 # build maps: hash -> path, hash -> filename
 def scan_musics():
-    exts = {".mp3", ".ogg", ".webm", ".flac", ".wav", ".m4a"}
+    exts = {
+        ".mp3", ".ogg", ".webm", ".flac", ".wav", ".m4a",
+        ".mp4", ".mkv", ".avi",  ".mov",  ".wmv", ".flv", ".mpg",".mpeg"
+    }
     mapping = {}
     names = {}
     for root, _, files in os.walk(MUSIC_DIR):
