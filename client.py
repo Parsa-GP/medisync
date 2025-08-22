@@ -48,12 +48,10 @@ log.debug("PROGRAMM STARTED.")
 
 # env vars
 MUSIC_DIR = Path("musics")
-try:
-    ws_server = sys.argv[1]
-except Exception:
-    ws_server = "127.0.0.1:6789"
-WS_URI = f"ws://{ws_server}"  # match server
+
 RECONNECT_DELAY = 2.0
+# if delay is (in this case) more than 5s, it seeks the media forward/backward
+MAXDELAY_TILL_RESYNC = 5.0
 
 # build maps: hash -> path, hash -> filename
 def scan_musics():
@@ -81,6 +79,11 @@ def scan_musics():
     return mapping, names
 
 MUSIC_PATHS, MUSIC_NAMES = scan_musics()
+try:
+    ws_server = sys.argv[1]
+except Exception:
+    ws_server = "127.0.0.1:6789"
+ws_url = f"ws://{ws_server}"
 
 # mpv player
 player = MPV(ytdl=False, input_default_bindings=True, input_vo_keyboard=True)
@@ -247,7 +250,7 @@ async def handle_ws_messages(ws):
                         log.info(f"where i at: {current_pos}")
                         if current_pos is None:
                             current_pos = 0.0
-                        if abs(current_pos - pos) > 5.0:
+                        if abs(current_pos - pos) > MAXDELAY_TILL_RESYNC:
                             log.debug(f"Syncing the song because too much delay ({current_pos-pos}s) to be exact.")
                             seek_player(pos)
                     except Exception:
@@ -436,8 +439,8 @@ async def main_loop():
     global player
     while True:
         try:
-            async with websockets.connect(WS_URI) as ws:
-                log.info(f"Connected to {WS_URI}")
+            async with websockets.connect(ws_url) as ws:
+                log.info(f"Connected to {ws_url}")
                 # on connect send a hello identifying available hashes
                 try:
                     await ws.send(json.dumps({"type": "hello", "available": list(MUSIC_PATHS.keys())[:50]}))
@@ -454,7 +457,7 @@ async def main_loop():
                 for t in pending:
                     t.cancel()
         except (ConnectionRefusedError, OSError) as e:
-            log.warning(f"Could not connect to server {WS_URI}: {e}; retrying in {RECONNECT_DELAY}s")
+            log.warning(f"Could not connect to server {ws_url}: {e}; retrying in {RECONNECT_DELAY}s")
             await asyncio.sleep(RECONNECT_DELAY)
             continue
         except websockets.exceptions.ConnectionClosedError as e:
