@@ -52,6 +52,8 @@ MUSIC_DIR = Path("musics")
 RECONNECT_DELAY = 2.0
 # if delay is (in this case) more than 5s, it seeks the media forward/backward
 MAXDELAY_TILL_RESYNC = 5.0
+# open window for video files
+VIDEO_WINDOW = False
 
 # build maps: hash -> path, hash -> filename
 def scan_musics():
@@ -86,7 +88,7 @@ except Exception:
 ws_url = f"ws://{ws_server}"
 
 # mpv player
-player = MPV(ytdl=False, input_default_bindings=True, input_vo_keyboard=True)
+player = MPV(ytdl=False, input_default_bindings=True, input_vo_keyboard=True, video=VIDEO_WINDOW)
 # state
 current_hash = None
 current_path = None
