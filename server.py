@@ -20,7 +20,10 @@ log.addHandler(handler)
 log.debug("SERVER STARTED.")
 
 MUSIC_DIR = "musics"
-SUPPORTED_EXTS = [".mp3", ".ogg", ".webm", ".flac", ".wav", ".m4a"]
+SUPPORTED_EXTS = [
+    ".mp3", ".ogg", ".webm", ".flac", ".wav", ".m4a",
+    "mp4", "mkv", ".avi", ".mov", ".wmv", ".flv", ".mpg",".mpeg"
+]
 
 def get_media_duration(filepath: str) -> float:
     """

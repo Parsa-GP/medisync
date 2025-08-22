@@ -244,7 +244,7 @@ async def handle_ws_messages(ws):
                         log.info(f"where i at: {current_pos}")
                         if current_pos is None:
                             current_pos = 0.0
-                        if abs(current_pos - pos) > 0.8:
+                        if abs(current_pos - pos) > 5.0:
                             log.debug(f"Syncing the song because too much delay ({current_pos-pos}s) to be exact.")
                             seek_player(pos)
                     except Exception:
@@ -424,6 +424,9 @@ async def handle_single_play_message(msg, ws):
             pass
     else:
         log.warning(f"Received unknown hash from server: {h}")
+        log.info(h in MUSIC_PATHS)
+        log.info(h)
+        log.info(MUSIC_PATHS)
 
 # main connection loop (reconnects automatically)
 async def main_loop():
