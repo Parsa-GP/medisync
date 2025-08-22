@@ -48,7 +48,11 @@ log.debug("PROGRAMM STARTED.")
 
 # env vars
 MUSIC_DIR = Path("musics")
-WS_URI = "ws://127.0.0.1:6789"  # match server
+try:
+    ws_server = sys.argv[1]
+except Exception:
+    ws_server = "127.0.0.1:6789"
+WS_URI = f"ws://{ws_server}"  # match server
 RECONNECT_DELAY = 2.0
 
 # build maps: hash -> path, hash -> filename

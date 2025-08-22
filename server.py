@@ -51,7 +51,6 @@ def hash_file(path):
 
 # Scan musics
 musics = {}
-musics_duration = {}
 for root, _, files in os.walk(MUSIC_DIR):
     for f in files:
         if any(f.lower().endswith(ext) for ext in SUPPORTED_EXTS):
@@ -59,7 +58,7 @@ for root, _, files in os.walk(MUSIC_DIR):
             filehash = hash_file(p)
             musics[filehash] = {"name": f, "duration":get_media_duration(os.path.join(MUSIC_DIR, f))}  # show filename in UI
 
-log.debug(musics_duration)
+log.debug(musics)
 
 queue = []
 current = {"hash": None, "start": 0, "duration": 0, "paused": False, "position": 0}
