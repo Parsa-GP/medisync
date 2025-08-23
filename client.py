@@ -8,13 +8,14 @@ Requires:
 """
 
 import asyncio
-import hashlib
-import json
-import os
-import sys
-import time
+from hashlib import sha256
+from json import loads, dumps
+from os import walk
+from sys import argv, exit
+from time import time
 from pathlib import Path
 import logging
+import argparse
 
 import websockets
 
@@ -63,12 +64,12 @@ def scan_musics():
     }
     mapping = {}
     names = {}
-    for root, _, files in os.walk(MUSIC_DIR):
+    for root, _, files in walk(MUSIC_DIR):
         for fn in files:
             p = Path(root) / fn
             if p.suffix.lower() in exts:
                 # compute sha256
-                h = hashlib.sha256()
+                h = sha256()
                 with open(p, "rb") as f:
                     while True:
                         chunk = f.read(8192)
@@ -81,8 +82,9 @@ def scan_musics():
     return mapping, names
 
 MUSIC_PATHS, MUSIC_NAMES = scan_musics()
+_PLAYING = False
 try:
-    ws_server = sys.argv[1]
+    ws_server = argv[1]
 except Exception:
     ws_server = "127.0.0.1:6789"
 ws_url = f"ws://{ws_server}"
@@ -122,20 +124,11 @@ def seek_player(position):
     try:
         # try direct method
         if hasattr(player, "seek"):
-            # some python-mpv versions support player.seek(seconds, reference='absolute')
-            try:
-                player.seek(position, reference="absolute")
-                return True
-            except TypeError:
-                # older signature maybe player.seek(seconds, 'absolute')
-                try:
-                    player.seek(position, "absolute")
-                    return True
-                except Exception:
-                    pass
+            player.seek(position, reference="absolute+exact")
+            return True
         # fallback to command interface
         try:
-            player.command("seek", str(position), "absolute")
+            player.command("seek", str(position), "absolute+exact")
             return True
         except Exception:
             pass
@@ -189,7 +182,7 @@ async def monitor_and_report(ws):
                     # ended
                     try:
                         msg = {"type": "position", "hash": current_hash, "position": current_duration, "duration": current_duration, "event": "ended"}
-                        await ws.send(json.dumps(msg))
+                        await ws.send(dumps(msg))
                     except Exception:
                         pass
                     # clear state (mpv might go idle)
@@ -220,11 +213,11 @@ async def handle_ws_messages(ws):
 
     async for raw in ws:
         try:
-            data = json.loads(raw)
+            data = loads(raw)
         except Exception:
             continue
 
-        log.info(f"SERVER SENT WS: {data}")
+        log.debug(f"SERVER SENT WS: {data}")
         # server broadcasts a "play" message with current info
         if data.get("type") == "play":
             curr = data.get("current", {}) or {}
@@ -249,7 +242,7 @@ async def handle_ws_messages(ws):
                     # seek if drift significant
                     try:
                         current_pos = getattr(player, "time_pos", None) or 0.0
-                        log.info(f"where i at: {current_pos}")
+                        log.debug(f"where i at: {current_pos}")
                         if current_pos is None:
                             current_pos = 0.0
                         if abs(current_pos - pos) > MAXDELAY_TILL_RESYNC:
@@ -304,9 +297,9 @@ async def handle_ws_messages(ws):
                 pos = curr.get("position", 0.0) or 0.0
                 if pos:
                     # try to seek
-                    log.info("seek0 273")
+                    log.debug("seek0 273")
                     seek_player(pos)
-                    _last_seeked_to = time.time()
+                    _last_seeked_to = time()
                 # apply pause state
                 try:
                     player.pause = bool(paused)
@@ -329,7 +322,7 @@ async def handle_ws_messages(ws):
 
                 try:
                     msg = {"type": "position", "hash": current_hash, "position": getattr(player, "time_pos", 0) or 0, "duration": current_duration}
-                    await ws.send(json.dumps(msg))
+                    await ws.send(dumps(msg))
                 except Exception:
                     pass
 
@@ -363,14 +356,14 @@ async def handle_ws_messages(ws):
             pos = getattr(player, "time_pos", None) or 0.0
             dur = current_duration or 0.0
             try:
-                await ws.send(json.dumps({"type": "position", "hash": current_hash, "position": pos, "duration": dur}))
+                await ws.send(dumps({"type": "position", "hash": current_hash, "position": pos, "duration": dur}))
             except Exception:
                 pass
 
         # ignore other message types, but support generic 'ping' -> respond 'pong'
         elif data.get("type") == "ping":
             try:
-                await ws.send(json.dumps({"type": "pong"}))
+                await ws.send(dumps({"type": "pong"}))
             except Exception:
                 pass
 
@@ -418,7 +411,7 @@ async def handle_single_play_message(msg, ws):
 
         pos = inner.get("position", 0.0) or 0.0
         if pos:
-            log.info("seek0 386")
+            log.debug("seek0 386")
             seek_player(pos)
         try:
             player.pause = bool(paused)
@@ -427,7 +420,7 @@ async def handle_single_play_message(msg, ws):
 
         try:
             msg = {"type": "position", "hash": current_hash, "position": getattr(player, "time_pos", 0) or 0, "duration": current_duration}
-            await ws.send(json.dumps(msg))
+            await ws.send(dumps(msg))
         except Exception:
             pass
     else:
@@ -445,7 +438,7 @@ async def main_loop():
                 log.info(f"Connected to {ws_url}")
                 # on connect send a hello identifying available hashes
                 try:
-                    await ws.send(json.dumps({"type": "hello", "available": list(MUSIC_PATHS.keys())[:50]}))
+                    await ws.send(dumps({"type": "hello", "available": list(MUSIC_PATHS.keys())[:50]}))
                 except Exception:
                     pass
 
@@ -474,7 +467,7 @@ async def main_loop():
 if __name__ == "__main__":
     if not MUSIC_PATHS:
         log.info("No music files found in musics/ — create the directory and place files (*.mp3,*.ogg,*.webm, etc.)")
-        sys.exit(1)
+        exit(1)
     try:
         asyncio.run(main_loop())
     except KeyboardInterrupt:
