@@ -48,7 +48,7 @@ log.addHandler(handler)
 log.debug("PROGRAMM STARTED.")
 
 # env vars
-MUSIC_DIR = Path("musics")
+MUSIC_DIR = Path("media")
 
 RECONNECT_DELAY = 2.0
 # if delay is (in this case) more than 5s, it seeks the media forward/backward

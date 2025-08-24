@@ -30,7 +30,7 @@ handler.setFormatter(logging.Formatter('[%(levelname)s] %(name)s: %(message)s'))
 log.addHandler(handler)
 log.info("SERVER STARTED.")
 
-MUSIC_DIR = "musics"
+MUSIC_DIR = "media"
 SUPPORTED_EXTS = [
     # audio formats
     ".mp3", ".ogg", ".webm", ".flac", ".wav", ".m4a",
