@@ -166,7 +166,7 @@ async def monitor_and_report(ws):
                         except Exception:
                             dur = None
                     if dur:
-                        current_duration = float(dur)
+                        current_duration = float(dur) # pyright: ignore[reportArgumentType]
                 except Exception:
                     pass
                 # fallback: use mutagen
@@ -178,7 +178,7 @@ async def monitor_and_report(ws):
             # detect end (allow small tolerance)
             if current_hash and current_duration and pos is not None:
                 # sometimes pos jumps slightly past duration at EOF; use tolerance
-                if pos >= max(0.0, current_duration - 0.6):
+                if pos >= max(0.0, current_duration - 0.6): # pyright: ignore[reportOperatorIssue]
                     # ended
                     try:
                         msg = {"type": "position", "hash": current_hash, "position": current_duration, "duration": current_duration, "event": "ended"}

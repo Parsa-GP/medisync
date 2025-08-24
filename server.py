@@ -1,7 +1,18 @@
-import os, hashlib, asyncio, json, time, subprocess, logging, shutil, requests
-from quart import Quart, request, jsonify, render_template_string
-import websockets, httpx
+import asyncio
+import logging
+import websockets
+from httpx import AsyncClient
+from subprocess import run
+from shutil import which
+from time import time
+from os import walk, path
+from hashlib import sha256
+from json import loads, dumps
+from quart import Quart, request, jsonify, render_template, url_for, abort
 from pathlib import Path
+
+import websockets.asyncio
+import websockets.asyncio.server
 
 # init logging
 logging._levelToName = {
@@ -17,11 +28,13 @@ log.setLevel(logging.DEBUG)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter('[%(levelname)s] %(name)s: %(message)s'))
 log.addHandler(handler)
-log.debug("SERVER STARTED.")
+log.info("SERVER STARTED.")
 
 MUSIC_DIR = "musics"
 SUPPORTED_EXTS = [
+    # audio formats
     ".mp3", ".ogg", ".webm", ".flac", ".wav", ".m4a",
+    # video formats
     ".mp4", ".mkv", ".avi",  ".mov",  ".wmv",  ".flv", ".mpg",".mpeg"
 ]
 SYNC_THRESHOLD = 5
@@ -30,24 +43,24 @@ def get_media_duration(filepath: str) -> float:
     """
     Get duration (in seconds) of a local audio/video file using ffprobe.
     """
-    if not shutil.which("ffprobe"):
+    if not which("ffprobe"):
         log.error("ffmpeg is not installed. Make sure you have ffmpeg or the ffprobe binary is in the PATH.")
         exit(1)
 
-    filepath = Path(filepath).expanduser().resolve()
-    result = subprocess.run(
+    filepath = str(Path(filepath).expanduser().resolve())
+    result = run(
         [
             "ffprobe", "-v", "error","-show_entries",
-            "format=duration", "-of", "json", str(filepath)
+            "format=duration", "-of", "json", filepath
         ],
         capture_output=True,
         text=True
     )
-    data = json.loads(result.stdout)
-    return float(data["format"]["duration"]) if "format" in data else None
+    data = loads(result.stdout)
+    return float(data["format"]["duration"]) if "format" in data else -1.0
 
-def hash_file(path):
-    h = hashlib.sha256()
+def hash_file(path: str) -> str:
+    h = sha256()
     with open(path, "rb") as f:
         while chunk := f.read(8192):
             h.update(chunk)
@@ -55,12 +68,12 @@ def hash_file(path):
 
 # Scan musics
 musics = {}
-for root, _, files in os.walk(MUSIC_DIR):
+for root, _, files in walk(MUSIC_DIR):
     for f in files:
         if any(f.lower().endswith(ext) for ext in SUPPORTED_EXTS):
-            p = os.path.join(root, f)
+            p = path.join(root, f)
             filehash = hash_file(p)
-            musics[filehash] = {"name": f, "duration":get_media_duration(os.path.join(MUSIC_DIR, f))}  # show filename in UI
+            musics[filehash] = {"name": f, "duration":get_media_duration(path.join(MUSIC_DIR, f))}  # show filename in UI
 
 log.debug(musics)
 
@@ -70,12 +83,14 @@ clients = set()
 doAutoplay = True
 
 # ---------------- websocket ----------------
-async def ws_handler(websocket):
+async def ws_handler(websocket: websockets.asyncio.server.ServerConnection):
     clients.add(websocket)
+    log.info("NEW CLIENT CONNECTED: "+str(websocket.id))
+    log.debug("All Clients: "+ str([i.id for i in clients]))
     try:
-        await websocket.send(json.dumps({"type": "rebroadcast", "current": current}))
+        await websocket.send(dumps({"type": "rebroadcast", "current": current}))
         async for msg in websocket:
-            data = json.loads(msg)
+            data = loads(msg)
             if data.get("type") == "position":
                 current["position"] = data["position"]
     finally:
@@ -88,11 +103,11 @@ async def broadcaster():
                 log.debug("SONG ENDED!!~")
                 await asyncio.sleep(SYNC_THRESHOLD)
                 log.debug("trying to play next if there is one...")
-                async with httpx.AsyncClient() as client:
+                async with AsyncClient() as client:
                     await client.post("http://127.0.0.1:5000/api/play")
                 continue
             current["position"] = current["position"]+SYNC_THRESHOLD
-            msg = json.dumps({"type": "play", "current": current})
+            msg = dumps({"type": "play", "current": current})
             await asyncio.gather(*[c.send(msg) for c in clients], return_exceptions=True)
         await asyncio.sleep(SYNC_THRESHOLD)
 
@@ -101,131 +116,7 @@ app = Quart(__name__)
 
 @app.route("/")
 async def index():
-    return await render_template_string("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Music Sync Server</title>
-        <h2>Now Playing</h2>
-        <div id="now-playing">Nothing</div>
-
-        <style>
-            body { font-family: sans-serif; margin: 2em; }
-            #music-list, #queue-list { border: 1px solid #ccc; padding: 1em; min-height: 100px; }
-            .music-item, .queue-item { padding: 0.5em; border: 1px solid #aaa; margin: 0.2em; cursor: pointer; background: #f9f9f9; }
-            .dragging { opacity: 0.5; }
-            button { margin-left: 1em; }
-        </style>
-    </head>
-    <body>
-        <h1>Music Sync Server</h1>
-
-        <h2>All Musics</h2>
-        <div id="music-list"></div>
-
-        <h2>Queue</h2>
-        <div id="queue-list"></div>
-        <button onclick="play()">Play Next</button>
-        <button onclick="pause()">Pause</button>
-        <label>
-            <input type="checkbox" id="autoplay-toggle" checked>
-            Autoplay next song
-        </label>
-
-        <script>
-            async function atp_get() {
-                let res = await fetch('/api/autoplay_get');
-                console.log(res);
-                let data = await res.json();
-                return data
-            }
-            const atp = document.getElementById("autoplay-toggle");
-            
-            console.log(atp_get());
-            //atp.checked = false
-            atp.addEventListener("change", e => {
-                fetch('/api/autoplay_set', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify( e.target.checked )
-                });
-            });
-            let musics = {};
-                                        
-            function fancyname(name, hash, duration) {
-                return name+" ("+hash.slice(0,8)+") ["+duration+"]";
-            }
-            async function loadMusics() {
-                let res = await fetch('/api/musics');
-                let data = await res.json();
-                const container = document.getElementById("music-list");
-                container.innerHTML = "";
-                for (const [h, music_info] of Object.entries(data)) {
-                    const duration = Math.round(music_info.duration/40) + ":" + Math.round(music_info.duration%60)
-                    let div = document.createElement("div");
-                    div.className = "music-item";
-                    div.textContent = fancyname(music_info.name, h, duration);
-                    div.onclick = async () => { await fetch('/api/queue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({hash:h})}); refreshQueue(); };
-                    container.appendChild(div);
-                }
-                musics = data;
-            }
-
-            async function refreshQueue() {
-              let res = await fetch('/api/queue');
-              let data = await res.json();
-              const container = document.getElementById("queue-list");
-              container.innerHTML = "";
-              data.forEach((h, i) => {
-                  let div = document.createElement("div");
-                  div.className = "queue-item";
-                  div.draggable = true;
-                  div.dataset.index = i;
-                  div.textContent = fancyname(musics[h].name, h, musics[h].duration);
-
-                  let btn = document.createElement("button");
-                  btn.textContent = "Delete";
-                  btn.onclick = async (e) => { 
-                      e.stopPropagation();
-                      await fetch('/api/queue', {method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({hash:h})}); 
-                      refreshQueue(); 
-                  };
-                  div.appendChild(btn);
-
-                  div.addEventListener('dragstart', (e)=>{div.classList.add('dragging'); e.dataTransfer.setData('text/plain', i);});
-                  div.addEventListener('dragend', (e)=>{div.classList.remove('dragging');});
-                  div.addEventListener('dragover', e=>e.preventDefault());
-                  div.addEventListener('drop', async e=>{
-                      e.preventDefault();
-                      let from = parseInt(e.dataTransfer.getData('text/plain'));
-                      let to = parseInt(div.dataset.index);
-                      await fetch('/api/queue/reorder', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({from,to})});
-                      refreshQueue();
-                  });
-
-                  container.appendChild(div);
-              });
-
-              // Update now playing
-              let npRes = await fetch('/api/current');
-              let npData = await npRes.json();
-              console.log(npData)
-              console.log(musics)
-              document.getElementById("now-playing").textContent = npData.hash ? fancyname(npData.hash, musics[npData.hash].name, musics[npData.hash].duration)  : "Nothing";
-          }
-
-
-            async function play() { await fetch('/api/play', {method:'POST'}); refreshQueue(); }
-            async function pause() { await fetch('/api/pause', {method:'POST'}); refreshQueue(); }
-
-            loadMusics();
-            refreshQueue();
-        </script>
-    </body>
-    </html>
-    """)
+    return await render_template("index.html")
 
 @app.route("/api/musics")
 async def api_musics():
@@ -248,6 +139,8 @@ async def manage_queue():
         h = data.get("hash")
         queue = [x for x in queue if x != h]
         return jsonify(queue)
+    else:
+        return "Use GET, POST or DELETE to fetch/change data."
 
 @app.route("/api/queue/reorder", methods=["POST"])
 async def reorder_queue():
@@ -277,7 +170,7 @@ async def play():
     global current
     if queue:
         h = queue.pop(0)
-        current = {"hash": h, "start": time.time(), "duration": musics[h]["duration"], "paused": False, "position": 0}
+        current = {"hash": h, "start": time(), "duration": musics[h]["duration"], "paused": False, "position": 0}
     return jsonify(current)
 
 @app.route("/api/pause", methods=["POST"])

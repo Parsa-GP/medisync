@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+	<html>
+	<head>
+		<title>MusiSync</title>
+		<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+	</head>
+	<body>
+		<h1>Music Sync Server</h1>
+
+		<span>Now Playing:</span>
+		<span id="now-playing">Nothing</span>
+
+		<h2>All Musics</h2>
+		<div id="music-list"></div>
+
+		<h2>Queue</h2>
+		<div id="queue-list"></div>
+		<button onclick="play()">Play Next</button>
+		<button onclick="pause()">Pause</button>
+		<label>
+			<input type="checkbox" id="autoplay-toggle" checked>
+			Autoplay next song
+		</label>
+
+		<script src="{{ url_for('static', filename='script.js') }}"></script>
+	</body>
+	</html>

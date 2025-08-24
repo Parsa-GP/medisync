@@ -1,0 +1,80 @@
+:root {
+	--MIKU-text: #9CE2DD;
+	--MIKU-primary: #39c5bb;
+	--MIKU-dark: #216D67;
+	--MIKU-bg: #091413;
+}
+
+::-webkit-scrollbar-thumb {
+	/* Scrollbar Foreground */
+	background: var(--MIKU-primary);
+}
+::-webkit-scrollbar-track {
+	/* Scrollbar Background */
+	background: var(--MIKU-bg);
+	background: transparent;
+}
+
+@keyframes bg-pulse {
+	from { background-position: 0% 100%; }
+	to { background-position: 100% 0%; }
+}
+
+body {
+	background: var(--MIKU-bg);
+	color: white;
+	font-family: sans-serif;
+	margin: 2em;
+	background-image: linear-gradient(160deg, var(--MIKU-bg) 40%, black);
+
+	animation-duration: 1s;
+	animation-name: bg-pulse;
+	background-size: 200% 200%;
+	background-position: 0% 100%;
+	animation-duration: 45s;
+	animation-iteration-count: infinite;
+	animation-timing-function: cubic-bezier(0.37, 0, 0.63, 1); /* easeInOutSine */
+	animation-direction: alternate;
+}
+
+h1, h2 {
+	color: var(--MIKU-primary);
+	text-shadow: 2px 3px 5px var(--MIKU-dark);
+}
+#music-list, #queue-list {
+	border: 2px solid var(--MIKU-primary);
+	border-radius: 8px;
+	padding: 12px 16px;
+	height: 80vh;
+	max-height: 800px;
+	overflow: scroll;
+	width: 50vw;
+	box-shadow: inline 0 0 12px var(--MIKU-bg);
+}
+#queue-list {
+	height: 50vh;
+	max-height: 500px;
+}
+.music-item, .queue-item {
+	padding: 6px 10px;
+	margin-bottom: 6px;
+	border: 2px solid var(--MIKU-primary);
+	box-shadow: 2px 2px 0 var(--MIKU-primary);
+	border-radius: 8px;
+	color: var(--MIKU-primary);
+	width: fit-content;
+	cursor: pointer;
+}
+.queue-item {
+	cursor: grab;
+}
+.dragging {
+	/*opacity: 0.7;*/
+	border: 4px dashed var(--MIKU-primary);
+	cursor: grabbing;
+	box-shadow: unset;
+	background-color: transparent;
+}
+button {
+	margin-right: 1em;
+}
