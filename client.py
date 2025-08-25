@@ -78,7 +78,7 @@ except Exception:
     ws_server = WS_SERVER
 ws_url = f"ws://{ws_server}"
 
-player = MPV(ytdl=False, video=VIDEO_WINDOW)
+player = MPV(ytdl=False,input_default_bindings=True, input_vo_keyboard=True, osc=True, video=VIDEO_WINDOW)
 
 current_hash = None
 current_path = None
