@@ -1,35 +1,24 @@
 #!/usr/bin/env python3
-"""
-client.py - connect to server websocket, play announced tracks (by hash) from local musics/,
-report position/duration on request, and detect song end.
-
-Requires:
-  pip install python-mpv websockets mutagen
-"""
-
-import asyncio
 from hashlib import sha256
+from json5 import load, dump
 from json import loads, dumps
+from subprocess import run
 from os import walk
 from sys import argv, exit
 from time import time
 from pathlib import Path
+from shutil import which
+import asyncio
 import logging
 import argparse
-
 import websockets
 
-# try to import mpv and mutagen
+# try to import mpv
 try:
     from mpv import MPV
-except Exception as e:
-    print("missing dependency: python-mpv (pip install python-mpv)")
+except ImportError as e:
+    print("Missing dependency: python-mpv (pip install python-mpv)")
     raise
-
-try:
-    from mutagen import File as MutagenFile
-except Exception:
-    MutagenFile = None
 
 # init logging
 logging._levelToName = {
@@ -47,14 +36,15 @@ handler.setFormatter(logging.Formatter('[%(levelname)s] %(name)s: %(message)s'))
 log.addHandler(handler)
 log.debug("PROGRAMM STARTED.")
 
-# env vars
-MUSIC_DIR = Path("media")
+# init config
+with open("config.jsonc", "r+") as f:
+    CONFIG:dict = load(f)
 
-RECONNECT_DELAY = 2.0
-# if delay is (in this case) more than 5s, it seeks the media forward/backward
-MAXDELAY_TILL_RESYNC = 5.0
-# open window for video files
-VIDEO_WINDOW = False
+MUSIC_DIR = Path(CONFIG["media_folder"])
+RECONNECT_DELAY = CONFIG["reconnect_delay"]
+MAXDELAY_TILL_RESYNC = CONFIG["maxdelay_till_resync"]
+VIDEO_WINDOW = CONFIG["video_window"]
+WS_SERVER = CONFIG["ws_server"]
 
 # build maps: hash -> path, hash -> filename
 def scan_musics():
@@ -65,20 +55,19 @@ def scan_musics():
     mapping = {}
     names = {}
     for root, _, files in walk(MUSIC_DIR):
-        for fn in files:
-            p = Path(root) / fn
+        for fname in files:
+            p = Path(root) / fname
             if p.suffix.lower() in exts:
-                # compute sha256
-                h = sha256()
+                hash = sha256()
                 with open(p, "rb") as f:
                     while True:
                         chunk = f.read(8192)
                         if not chunk:
                             break
-                        h.update(chunk)
-                digest = h.hexdigest()
+                        hash.update(chunk)
+                digest = hash.hexdigest()
                 mapping[digest] = str(p)
-                names[digest] = fn
+                names[digest] = p
     return mapping, names
 
 MUSIC_PATHS, MUSIC_NAMES = scan_musics()
@@ -86,36 +75,31 @@ _PLAYING = False
 try:
     ws_server = argv[1]
 except Exception:
-    ws_server = "127.0.0.1:6789"
+    ws_server = WS_SERVER
 ws_url = f"ws://{ws_server}"
 
-# mpv player
-player = MPV(ytdl=False, input_default_bindings=True, input_vo_keyboard=True, video=VIDEO_WINDOW)
-# state
+player = MPV(ytdl=False, video=VIDEO_WINDOW)
+
 current_hash = None
 current_path = None
 current_duration = 0.0
 paused = False
 _last_seeked_to = None
 
-# helper: get duration via mutagen or mpv property fallback
-def get_file_duration(path):
-    # try mutagen first (more reliable)
-    if MutagenFile:
-        try:
-            meta = MutagenFile(path)
-            if meta and getattr(meta, "info", None):
-                dur = getattr(meta.info, "length", None)
-                if dur:
-                    return float(dur)
-        except Exception:
-            pass
-    # fallback: attempt to read player duration property after load (may be None)
-    try:
-        # command 'get_property' not available here; return 0 and let mpv populate later
-        return 0.0
-    except Exception:
-        return 0.0
+def get_media_duration(filepath: str) -> float:
+    """
+    Get duration (in seconds) of a local audio/video file using ffprobe.
+    """
+    if not which("ffprobe"):
+        log.error("ffmpeg is not installed. Make sure you have ffmpeg or the ffprobe binary is in the PATH.")
+        exit(1)
+
+    filepath = str(Path(filepath).expanduser().resolve())
+    cmd = ["ffprobe", "-v", "error","-show_entries", "format=duration", "-of", "json", filepath]
+    result = run(cmd, capture_output=True, text=True)
+    data = loads(result.stdout)
+    return float(data["format"]["duration"]) if "format" in data else -1.0
+
 
 # attempt to seek robustly
 def seek_player(position):
@@ -148,10 +132,7 @@ async def monitor_and_report(ws):
                 pos = getattr(player, "time_pos", None)
                 # sometimes property is a function or bytes, normalize
                 if callable(pos):
-                    try:
-                        pos = pos()
-                    except Exception:
-                        pos = None
+                    pos = pos()
             except Exception:
                 pos = None
 
@@ -161,17 +142,15 @@ async def monitor_and_report(ws):
                 try:
                     dur = getattr(player, "duration", None)
                     if callable(dur):
-                        try:
-                            dur = dur()
-                        except Exception:
-                            dur = None
-                    if dur:
+                        dur = dur()
                         current_duration = float(dur) # pyright: ignore[reportArgumentType]
+                    else:
+                        dur = None
                 except Exception:
                     pass
                 # fallback: use mutagen
                 if (not current_duration or current_duration == 0.0) and current_path:
-                    d = get_file_duration(current_path)
+                    d = get_media_duration(current_path)
                     if d and d > 0:
                         current_duration = float(d)
 
@@ -267,6 +246,7 @@ async def handle_ws_messages(ws):
 
             # new track announced
             if h in MUSIC_PATHS:
+                log.info("Playing ")
                 path = MUSIC_PATHS[h]
                 current_hash = h
                 current_path = path
@@ -290,7 +270,7 @@ async def handle_ws_messages(ws):
                 # give mpv a moment to load, then get duration from mutagen/mpv if available
                 await asyncio.sleep(0.2)
                 if not current_duration:
-                    d = get_file_duration(path)
+                    d = get_media_duration(path)
                     if d:
                         current_duration = d
                 # if server provided position, seek
@@ -308,14 +288,9 @@ async def handle_ws_messages(ws):
 
                 # inform server of duration & initial position
                 try:
-                    # attempt to get mpv duration property
                     mpv_dur = getattr(player, "duration", None)
-                    if callable(mpv_dur):
-                        try:
-                            mpv_dur = mpv_dur()
-                        except Exception:
-                            mpv_dur = None
-                    if mpv_dur:
+                    mpv_dur = mpv_dur() if callable(mpv_dur) else mpv_dur
+                    if isinstance(mpv_dur, (int, float)) and mpv_dur:
                         current_duration = float(mpv_dur)
                 except Exception:
                     pass
@@ -405,7 +380,7 @@ async def handle_single_play_message(msg, ws):
 
         await asyncio.sleep(0.2)
         if not current_duration:
-            d = get_file_duration(path)
+            d = get_media_duration(path)
             if d:
                 current_duration = d
 

@@ -1,0 +1,17 @@
+{
+  // media folder: putt your audio and video files here, scans subfolders too
+  "media_folder": "media", // [media] path to the folder
+
+  // time between each check for connecting to server (if it's not connected already)
+  "reconnect_delay": 2.0, // [2.0] in seconds
+
+  // if delay is (in this case) more than 5s, it seeks the media forward/backward
+  "maxdelay_till_resync": 5.0, // [5.0] in seconds
+
+  // open window for video files
+  // set to `no` when for example  a music video is playing, but you don't want to watch
+  // the video and want to just listen to the music
+  "video_window": "auto", // [auto], no
+
+  "ws_server": "127.0.0.1:6789"
+}

@@ -5,8 +5,9 @@ async function atp_get() {
 	return data
 }
 const atp = document.getElementById("autoplay-toggle");
+const npElement = document.getElementById("now-playing");
+const title = document.querySelector("title");
 
-console.log(atp_get());
 atp.addEventListener("change", e => {
 	fetch('/api/autoplay_set', {
 		method: 'POST',
@@ -17,12 +18,17 @@ atp.addEventListener("change", e => {
 	});
 });
 let musics = {};
-							
-function fancyname(name, hash, duration) {
-	dur_sec = Math.round(duration%60).toString().padStart(2,'0')
-	dur_min = Math.round(duration/40).toString().padStart(2,'0')
-	return name+" ("+hash.slice(0,8)+") ["+dur_min+":"+dur_sec+"]";
+
+function fancytime(s) {
+	dur_sec = Math.round(s%60).toString().padStart(2,'0')
+	dur_min = Math.round(s/40).toString().padStart(2,'0')
+	return dur_min+":"+dur_sec
 }
+
+function fancyname(name, hash, duration) {
+	return name+" <b>&#x2039;"+hash.slice(0,8)+"&#x203a;</b>&#x3014;<u>"+fancytime(duration)+"</u>&#x3015;";
+}
+
 async function loadMusics() {
 	let res = await fetch('/api/musics');
 	let data = await res.json();
@@ -31,7 +37,7 @@ async function loadMusics() {
 	for (const [h, music_info] of Object.entries(data)) {
 		let div = document.createElement("div");
 		div.className = "music-item";
-		div.textContent = fancyname(music_info.name, h, music_info.duration);
+		div.innerHTML = fancyname(music_info.name, h, music_info.duration);
 		div.onclick = async () => { await fetch('/api/queue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({hash:h})}); refreshQueue(); };
 		container.appendChild(div);
 	}
@@ -48,7 +54,7 @@ async function refreshQueue() {
 	  div.className = "queue-item";
 	  div.draggable = true;
 	  div.dataset.index = i;
-	  div.textContent = fancyname(musics[h].name, h, musics[h].duration);
+	  div.innerHTML = fancyname(musics[h].name, h, musics[h].duration);
 
 	  let btn = document.createElement("button");
 	  btn.textContent = "Delete";
@@ -76,15 +82,13 @@ async function refreshQueue() {
   // Update now playing
   let npRes = await fetch('/api/current');
   let npData = await npRes.json();
-
   //console.log(npData)
   //console.log(musics)
 
-  const npElement = document.getElementById("now-playing");
-  const title = document.querySelector("title");
+	var pauseIcon = npData.paused ? "&#x23F8;" : "&#x23F5;"
 
-	npElement.textContent = npData.hash ? fancyname(npData.hash, musics[npData.hash].name, musics[npData.hash].duration)  : "Nothing";
-	title = "MusiSync - " + npData.hash ? musics[npData.hash].name : "Nothing"
+	npElement.innerHTML = npData.hash ? pauseIcon+" "+fancytime(npData.position)+" | "+fancyname(musics[npData.hash].name, npData.hash, npData.duration) : "Nothing";
+	title.textContent = npData.hash ? "MusiSync - " + musics[npData.hash].name : "MusiSync"
 }
 
 
@@ -93,3 +97,10 @@ async function pause() { await fetch('/api/pause', {method:'POST'}); refreshQueu
 
 loadMusics();
 refreshQueue();
+
+setTimeout(() => {
+	loadMusics();
+}, 5000);
+setTimeout(() => {
+	refreshQueue();
+}, 1000);

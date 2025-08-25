@@ -55,7 +55,7 @@ h1, h2 {
 	height: 50vh;
 	max-height: 500px;
 }
-.music-item, .queue-item {
+.music-item, .queue-item, #now-playing {
 	padding: 6px 10px;
 	margin-bottom: 6px;
 	border: 2px solid var(--MIKU-primary);
@@ -64,6 +64,11 @@ h1, h2 {
 	color: var(--MIKU-primary);
 	width: fit-content;
 	cursor: pointer;
+}
+#controlbox > button {
+	background-color: var(--MIKU-primary);
+	border-radius: 8px;
+	color: var(--MIKU-bg);
 }
 .queue-item {
 	cursor: grab;

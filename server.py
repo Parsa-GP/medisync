@@ -48,14 +48,8 @@ def get_media_duration(filepath: str) -> float:
         exit(1)
 
     filepath = str(Path(filepath).expanduser().resolve())
-    result = run(
-        [
-            "ffprobe", "-v", "error","-show_entries",
-            "format=duration", "-of", "json", filepath
-        ],
-        capture_output=True,
-        text=True
-    )
+    cmd = ["ffprobe", "-v", "error","-show_entries", "format=duration", "-of", "json", filepath]
+    result = run(cmd, capture_output=True, text=True)
     data = loads(result.stdout)
     return float(data["format"]["duration"]) if "format" in data else -1.0
 
@@ -73,7 +67,7 @@ for root, _, files in walk(MUSIC_DIR):
         if any(f.lower().endswith(ext) for ext in SUPPORTED_EXTS):
             p = path.join(root, f)
             filehash = hash_file(p)
-            musics[filehash] = {"name": f, "duration":get_media_duration(path.join(MUSIC_DIR, f))}  # show filename in UI
+            musics[filehash] = {"name": f, "path": p, "duration":get_media_duration(p)}
 
 log.debug(musics)
 
@@ -101,6 +95,7 @@ async def broadcaster():
         if current["hash"]:
             if current["position"] > current["duration"]:
                 log.debug("SONG ENDED!!~")
+                current["paused"] = True
                 await asyncio.sleep(SYNC_THRESHOLD)
                 log.debug("trying to play next if there is one...")
                 async with AsyncClient() as client:
@@ -175,7 +170,10 @@ async def play():
 
 @app.route("/api/pause", methods=["POST"])
 async def pause():
-    current["paused"] = True
+    if current["paused"]:
+        current["paused"] = False
+    else:
+        current["paused"] = True
     return jsonify(current)
 
 @app.route("/api/rebroadcast", methods=["POST"])
